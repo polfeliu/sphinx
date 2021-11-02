@@ -19,7 +19,8 @@ import typing
 import warnings
 from functools import partial, partialmethod
 from importlib import import_module
-from inspect import Parameter, isclass, ismethod, ismethoddescriptor, ismodule  # NOQA
+from inspect import (Parameter, isasyncgenfunction, isclass, ismethod,  # NOQA
+                     ismethoddescriptor, ismodule)
 from io import StringIO
 from types import ModuleType
 from typing import Any, Callable, Dict, Mapping, Optional, Sequence, Tuple, Type, cast
@@ -186,6 +187,21 @@ def getmro(obj: Any) -> Tuple[Type, ...]:
         return tuple()
 
 
+def getorigbases(obj: Any) -> Optional[Tuple[Any, ...]]:
+    """Get __orig_bases__ from *obj* safely."""
+    if not inspect.isclass(obj):
+        return None
+
+    # Get __orig_bases__ from obj.__dict__ to avoid accessing the parent's __orig_bases__.
+    # refs: https://github.com/sphinx-doc/sphinx/issues/9607
+    __dict__ = safe_getattr(obj, '__dict__', {})
+    __orig_bases__ = __dict__.get('__orig_bases__')
+    if isinstance(__orig_bases__, tuple) and len(__orig_bases__) > 0:
+        return __orig_bases__
+    else:
+        return None
+
+
 def getslots(obj: Any) -> Optional[Dict]:
     """Get __slots__ attribute of the class as dict.
 
@@ -211,12 +227,15 @@ def getslots(obj: Any) -> Optional[Dict]:
 
 def isNewType(obj: Any) -> bool:
     """Check the if object is a kind of NewType."""
-    __module__ = safe_getattr(obj, '__module__', None)
-    __qualname__ = safe_getattr(obj, '__qualname__', None)
-    if __module__ == 'typing' and __qualname__ == 'NewType.<locals>.new_type':
-        return True
+    if sys.version_info >= (3, 10):
+        return isinstance(obj, typing.NewType)
     else:
-        return False
+        __module__ = safe_getattr(obj, '__module__', None)
+        __qualname__ = safe_getattr(obj, '__qualname__', None)
+        if __module__ == 'typing' and __qualname__ == 'NewType.<locals>.new_type':
+            return True
+        else:
+            return False
 
 
 def isenumclass(x: Any) -> bool:
@@ -245,12 +264,18 @@ def ispartial(obj: Any) -> bool:
     return isinstance(obj, (partial, partialmethod))
 
 
-def isclassmethod(obj: Any) -> bool:
+def isclassmethod(obj: Any, cls: Any = None, name: str = None) -> bool:
     """Check if the object is classmethod."""
     if isinstance(obj, classmethod):
         return True
     elif inspect.ismethod(obj) and obj.__self__ is not None and isclass(obj.__self__):
         return True
+    elif cls and name:
+        placeholder = object()
+        for basecls in getmro(cls):
+            meth = basecls.__dict__.get(name, placeholder)
+            if meth is not placeholder:
+                return isclassmethod(meth)
 
     return False
 
@@ -442,14 +467,14 @@ def object_description(object: Any) -> str:
                      (object_description(key), object_description(object[key]))
                      for key in sorted_keys)
             return "{%s}" % ", ".join(items)
-    if isinstance(object, set):
+    elif isinstance(object, set):
         try:
             sorted_values = sorted(object)
         except TypeError:
             pass  # Cannot sort set values, fall back to generic repr
         else:
             return "{%s}" % ", ".join(object_description(x) for x in sorted_values)
-    if isinstance(object, frozenset):
+    elif isinstance(object, frozenset):
         try:
             sorted_values = sorted(object)
         except TypeError:
@@ -457,6 +482,9 @@ def object_description(object: Any) -> str:
         else:
             return "frozenset({%s})" % ", ".join(object_description(x)
                                                  for x in sorted_values)
+    elif isinstance(object, enum.Enum):
+        return "%s.%s" % (object.__class__.__name__, object.name)
+
     try:
         s = repr(object)
     except Exception as exc:
@@ -834,20 +862,37 @@ def getdoc(obj: Any, attrgetter: Callable = safe_getattr,
     * inherited docstring
     * inherited decorated methods
     """
+    if cls and name and isclassmethod(obj, cls, name):
+        for basecls in getmro(cls):
+            meth = basecls.__dict__.get(name)
+            if meth and hasattr(meth, '__func__'):
+                doc = getdoc(meth.__func__)
+                if doc is not None or not allow_inherited:
+                    return doc
+
     doc = attrgetter(obj, '__doc__', None)
     if ispartial(obj) and doc == obj.__class__.__doc__:
         return getdoc(obj.func)
     elif doc is None and allow_inherited:
-        doc = inspect.getdoc(obj)
-
-        if doc is None and cls and name:
-            # inspect.getdoc() does not support some kind of inherited and decorated methods.
-            # This tries to obtain the docstring from super classes.
-            for basecls in getattr(cls, '__mro__', []):
+        if cls and name:
+            # Check a docstring of the attribute or method from super classes.
+            for basecls in getmro(cls):
                 meth = safe_getattr(basecls, name, None)
                 if meth is not None:
-                    doc = inspect.getdoc(meth)
-                    if doc:
+                    doc = attrgetter(meth, '__doc__', None)
+                    if doc is not None:
                         break
+
+            if doc is None:
+                # retry using `inspect.getdoc()`
+                for basecls in getmro(cls):
+                    meth = safe_getattr(basecls, name, None)
+                    if meth is not None:
+                        doc = inspect.getdoc(meth)
+                        if doc is not None:
+                            break
+
+        if doc is None:
+            doc = inspect.getdoc(obj)
 
     return doc

@@ -456,6 +456,12 @@ def test_html_download(app):
     assert (app.outdir / matched.group(1)).exists()
     assert matched.group(1) == filename
 
+    pattern = ('<a class="reference download internal" download="" '
+               'href="(_downloads/.*/)(file_with_special_%23_chars.xyz)">')
+    matched = re.search(pattern, result)
+    assert matched
+    assert (app.outdir / matched.group(1) / "file_with_special_#_chars.xyz").exists()
+
 
 @pytest.mark.sphinx('html', testroot='roles-download')
 def test_html_download_role(app, status, warning):
@@ -1330,6 +1336,25 @@ def test_html_remote_images(app, status, warning):
     assert not (app.outdir / 'python-logo.png').exists()
 
 
+@pytest.mark.sphinx('html', testroot='remote-logo')
+def test_html_remote_logo(app, status, warning):
+    app.builder.build_all()
+
+    result = (app.outdir / 'index.html').read_text()
+    assert ('<img class="logo" src="https://www.python.org/static/img/python-logo.png" alt="Logo"/>' in result)
+    assert ('<link rel="shortcut icon" href="https://www.python.org/static/favicon.ico"/>' in result)
+    assert not (app.outdir / 'python-logo.png').exists()
+
+
+@pytest.mark.sphinx('html', testroot='local-logo')
+def test_html_local_logo(app, status, warning):
+    app.builder.build_all()
+
+    result = (app.outdir / 'index.html').read_text()
+    assert ('<img class="logo" src="_static/img.png" alt="Logo"/>' in result)
+    assert (app.outdir / '_static/img.png').exists()
+
+
 @pytest.mark.sphinx('html', testroot='basic')
 def test_html_sidebar(app, status, warning):
     ctx = {}
@@ -1625,3 +1650,11 @@ def test_html_permalink_icon(app):
     assert ('<h1>The basic Sphinx documentation for testing<a class="headerlink" '
             'href="#the-basic-sphinx-documentation-for-testing" '
             'title="Permalink to this headline"><span>[PERMALINK]</span></a></h1>' in content)
+
+
+@pytest.mark.sphinx('html', testroot='html_signaturereturn_icon')
+def test_html_signaturereturn_icon(app):
+    app.build()
+    content = (app.outdir / 'index.html').read_text()
+
+    assert ('<span class="sig-return-icon">&#x2192;</span>' in content)

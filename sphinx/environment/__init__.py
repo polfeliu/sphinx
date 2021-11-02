@@ -10,6 +10,7 @@
 
 import os
 import pickle
+import warnings
 from collections import defaultdict
 from copy import copy
 from datetime import datetime
@@ -22,6 +23,7 @@ from docutils.nodes import Node
 
 from sphinx import addnodes
 from sphinx.config import Config
+from sphinx.deprecation import RemovedInSphinx60Warning
 from sphinx.domains import Domain
 from sphinx.environment.adapters.toctree import TocTree
 from sphinx.errors import BuildEnvironmentError, DocumentError, ExtensionError, SphinxError
@@ -43,6 +45,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 default_settings: Dict[str, Any] = {
+    'auto_id_prefix': 'id',
+    'embed_images': False,
     'embed_stylesheet': False,
     'cloak_email_addresses': True,
     'pep_base_url': 'https://www.python.org/dev/peps/',
@@ -52,6 +56,7 @@ default_settings: Dict[str, Any] = {
     'input_encoding': 'utf-8-sig',
     'doctitle_xform': False,
     'sectsubtitle_xform': False,
+    'section_self_link': False,
     'halt_level': 5,
     'file_insertion_enabled': True,
     'smartquotes_locales': [],
@@ -181,6 +186,9 @@ class BuildEnvironment:
         # set up environment
         if app:
             self.setup(app)
+        else:
+            warnings.warn("The 'app' argument for BuildEnvironment() becomes required now.",
+                          RemovedInSphinx60Warning, stacklevel=2)
 
     def __getstate__(self) -> Dict:
         """Obtains serializable data for pickling."""

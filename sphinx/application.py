@@ -152,12 +152,6 @@ class Sphinx:
         self.srcdir = abspath(srcdir)
         self.outdir = abspath(outdir)
         self.doctreedir = abspath(doctreedir)
-        self.confdir = confdir
-        if self.confdir:  # confdir is optional
-            self.confdir = abspath(self.confdir)
-            if not path.isfile(path.join(self.confdir, 'conf.py')):
-                raise ApplicationError(__("config directory doesn't contain a "
-                                          "conf.py file (%s)") % confdir)
 
         if not path.isdir(self.srcdir):
             raise ApplicationError(__('Cannot find source directory (%s)') %
@@ -203,7 +197,7 @@ class Sphinx:
 
         # notice for parallel build on macOS and py38+
         if sys.version_info > (3, 8) and platform.system() == 'Darwin' and parallel > 1:
-            logger.info(bold(__("For security reason, parallel mode is disabled on macOS and "
+            logger.info(bold(__("For security reasons, parallel mode is disabled on macOS and "
                                 "python3.8 and above. For more details, please read "
                                 "https://github.com/sphinx-doc/sphinx/issues/6803")))
 
@@ -212,9 +206,13 @@ class Sphinx:
 
         # read config
         self.tags = Tags(tags)
-        if self.confdir is None:
+        if confdir is None:
+            # set confdir to srcdir if -C given (!= no confdir); a few pieces
+            # of code expect a confdir to be set
+            self.confdir = self.srcdir
             self.config = Config({}, confoverrides or {})
         else:
+            self.confdir = abspath(confdir)
             self.config = Config.read(self.confdir, confoverrides or {}, self.tags)
 
         # initialize some limited config variables before initialize i18n and loading
@@ -229,11 +227,6 @@ class Sphinx:
             raise VersionRequirementError(
                 __('This project needs at least Sphinx v%s and therefore cannot '
                    'be built with this version.') % self.config.needs_sphinx)
-
-        # set confdir to srcdir if -C given (!= no confdir); a few pieces
-        # of code expect a confdir to be set
-        if self.confdir is None:
-            self.confdir = self.srcdir
 
         # load all built-in extension modules
         for extension in builtin_extensions:
@@ -307,8 +300,7 @@ class Sphinx:
     def _init_env(self, freshenv: bool) -> None:
         filename = path.join(self.doctreedir, ENV_PICKLE_FILENAME)
         if freshenv or not os.path.exists(filename):
-            self.env = BuildEnvironment()
-            self.env.setup(self)
+            self.env = BuildEnvironment(self)
             self.env.find_files(self.config, self.builder)
         else:
             try:
@@ -423,7 +415,7 @@ class Sphinx:
         :param event: The name of target event
         :param callback: Callback function for the event
         :param priority: The priority of the callback.  The callbacks will be invoked
-                         in the order of *priority* in asending.
+                         in order of *priority* (ascending).
         :return: A listener ID.  It can be used for :meth:`disconnect`.
 
         .. versionchanged:: 3.0
@@ -501,7 +493,7 @@ class Sphinx:
         values accordingly.
 
 
-        :param name: The name of configuration value.  It is recommended to be prefixed
+        :param name: The name of the configuration value.  It is recommended to be prefixed
                      with the extension name (ex. ``html_logo``, ``epub_title``)
         :param default: The default value of the configuration.
         :param rebuild: The condition of rebuild.  It must be one of those values:
@@ -547,10 +539,10 @@ class Sphinx:
         """Register or override a Docutils translator class.
 
         This is used to register a custom output translator or to replace a
-        builtin translator.  This allows extensions to use custom translator
+        builtin translator.  This allows extensions to use a custom translator
         and define custom nodes for the translator (see :meth:`add_node`).
 
-        :param name: The name of builder for the translator
+        :param name: The name of the builder for the translator
         :param translator_class: A translator class
         :param override: If true, install the translator forcedly even if another translator
                          is already installed as the same name
@@ -614,11 +606,11 @@ class Sphinx:
         using :rst:role:`numref`.
 
         :param node: A node class
-        :param figtype: The type of enumerable nodes.  Each figtypes have individual numbering
-                        sequences.  As a system figtypes, ``figure``, ``table`` and
-                        ``code-block`` are defined.  It is able to add custom nodes to these
-                        default figtypes.  It is also able to define new custom figtype if new
-                        figtype is given.
+        :param figtype: The type of enumerable nodes.  Each figtype has individual numbering
+                        sequences.  As system figtypes, ``figure``, ``table`` and
+                        ``code-block`` are defined.  It is possible to add custom nodes to
+                        these default figtypes.  It is also possible to define new custom
+                        figtype if a new figtype is given.
         :param title_getter: A getter function to obtain the title of node.  It takes an
                              instance of the enumerable node, and it must return its title as
                              string.  The title is used to the default title of references for
@@ -637,7 +629,7 @@ class Sphinx:
     def add_directive(self, name: str, cls: Type[Directive], override: bool = False) -> None:
         """Register a Docutils directive.
 
-        :param name: The name of directive
+        :param name: The name of the directive
         :param cls: A directive class
         :param override: If true, install the directive forcedly even if another directive
                          is already installed as the same name
@@ -663,10 +655,10 @@ class Sphinx:
                    ...
 
            def setup(app):
-               add_directive('my-directive', MyDirective)
+               app.add_directive('my-directive', MyDirective)
 
         For more details, see `the Docutils docs
-        <http://docutils.sourceforge.net/docs/howto/rst-directives.html>`__ .
+        <https://docutils.sourceforge.io/docs/howto/rst-directives.html>`__ .
 
         .. versionchanged:: 0.6
            Docutils 0.5-style directive classes are now supported.
@@ -691,7 +683,7 @@ class Sphinx:
                          installed as the same name
 
         For more details about role functions, see `the Docutils docs
-        <http://docutils.sourceforge.net/docs/howto/rst-roles.html>`__ .
+        <https://docutils.sourceforge.io/docs/howto/rst-roles.html>`__ .
 
         .. versionchanged:: 1.8
            Add *override* keyword.
@@ -763,9 +755,9 @@ class Sphinx:
         Like :meth:`add_role`, but the role is added to the domain named
         *domain*.
 
-        :param domain: The name of target domain
-        :param name: A name of role
-        :param role: A role function
+        :param domain: The name of the target domain
+        :param name: The name of the role
+        :param role: The role function
         :param override: If true, install the role forcedly even if another role is already
                          installed as the same name
 
@@ -781,8 +773,8 @@ class Sphinx:
 
         Add a custom *index* class to the domain named *domain*.
 
-        :param domain: The name of target domain
-        :param index: A index class
+        :param domain: The name of the target domain
+        :param index: The index class
         :param override: If true, install the index forcedly even if another index is
                          already installed as the same name
 
@@ -929,7 +921,7 @@ class Sphinx:
 
         refs: `Transform Priority Range Categories`__
 
-        __ http://docutils.sourceforge.net/docs/ref/transforms.html#transform-priority-range-categories
+        __ https://docutils.sourceforge.io/docs/ref/transforms.html#transform-priority-range-categories
         """  # NOQA
         self.registry.add_transform(transform)
 
@@ -950,8 +942,8 @@ class Sphinx:
         Add *filename* to the list of JavaScript files that the default HTML
         template will include in order of *priority* (ascending).  The filename
         must be relative to the HTML static path , or a full URI with scheme.
-        If the priority of JavaScript file is the same as others, the JavaScript
-        files will be included in order of the registration.  If the keyword
+        If the priority of the JavaScript file is the same as others, the JavaScript
+        files will be included in order of registration.  If the keyword
         argument ``body`` is given, its value will be added between the
         ``<script>`` tags. Extra keyword arguments are included as attributes of
         the ``<script>`` tag.
@@ -979,7 +971,7 @@ class Sphinx:
            * - 800
              - default priority for :confval:`html_js_files`
 
-        A JavaScript file can be added to the specific HTML page when on extension
+        A JavaScript file can be added to the specific HTML page when an extension
         calls this method on :event:`html-page-context` event.
 
         .. versionadded:: 0.5
@@ -1001,8 +993,8 @@ class Sphinx:
         Add *filename* to the list of CSS files that the default HTML template
         will include in order of *priority* (ascending).  The filename must be
         relative to the HTML static path, or a full URI with scheme.  If the
-        priority of CSS file is the same as others, the CSS files will be
-        included in order of the registration.  The keyword arguments are also
+        priority of the CSS file is the same as others, the CSS files will be
+        included in order of registration.  The keyword arguments are also
         accepted for attributes of ``<link>`` tag.
 
         Example::
@@ -1030,15 +1022,15 @@ class Sphinx:
            * - 800
              - default priority for :confval:`html_css_files`
 
-        A CSS file can be added to the specific HTML page when on extension calls
+        A CSS file can be added to the specific HTML page when an extension calls
         this method on :event:`html-page-context` event.
 
         .. versionadded:: 1.0
 
         .. versionchanged:: 1.6
            Optional ``alternate`` and/or ``title`` attributes can be supplied
-           with the *alternate* (of boolean type) and *title* (a string)
-           arguments. The default is no title and *alternate* = ``False``. For
+           with the arguments *alternate* (a Boolean) and *title* (a string).
+           The default is no title and *alternate* = ``False``. For
            more information, refer to the `documentation
            <https://mdn.io/Web/CSS/Alternative_style_sheets>`__.
 
@@ -1054,12 +1046,32 @@ class Sphinx:
         if hasattr(self.builder, 'add_css_file'):
             self.builder.add_css_file(filename, priority=priority, **kwargs)  # type: ignore
 
+    def add_stylesheet(self, filename: str, alternate: bool = False, title: str = None
+                       ) -> None:
+        """An alias of :meth:`add_css_file`.
+
+        .. deprecated:: 1.8
+        """
+        logger.warning('The app.add_stylesheet() is deprecated. '
+                       'Please use app.add_css_file() instead.')
+
+        attributes = {}  # type: Dict[str, Any]
+        if alternate:
+            attributes['rel'] = 'alternate stylesheet'
+        else:
+            attributes['rel'] = 'stylesheet'
+
+        if title:
+            attributes['title'] = title
+
+        self.add_css_file(filename, **attributes)
+
     def add_latex_package(self, packagename: str, options: str = None,
                           after_hyperref: bool = False) -> None:
         r"""Register a package to include in the LaTeX source code.
 
         Add *packagename* to the list of packages that LaTeX source code will
-        include.  If you provide *options*, it will be taken to `\usepackage`
+        include.  If you provide *options*, it will be taken to the `\usepackage`
         declaration.  If you set *after_hyperref* truthy, the package will be
         loaded after ``hyperref`` package.
 
@@ -1095,7 +1107,7 @@ class Sphinx:
 
         Add *cls* as a new documenter class for the :mod:`sphinx.ext.autodoc`
         extension.  It must be a subclass of
-        :class:`sphinx.ext.autodoc.Documenter`.  This allows to auto-document
+        :class:`sphinx.ext.autodoc.Documenter`.  This allows auto-documenting
         new types of objects.  See the source of the autodoc module for
         examples on how to subclass :class:`Documenter`.
 
@@ -1148,10 +1160,10 @@ class Sphinx:
         """Register a suffix of source files.
 
         Same as :confval:`source_suffix`.  The users can override this
-        using the setting.
+        using the config setting.
 
         If *override* is True, the given *suffix* is forcedly installed even if
-        a same suffix is already installed.
+        the same suffix is already installed.
 
         .. versionadded:: 1.8
         """
@@ -1212,8 +1224,8 @@ class Sphinx:
     def add_message_catalog(self, catalog: str, locale_dir: str) -> None:
         """Register a message catalog.
 
-        :param catalog: A name of catalog
-        :param locale_dir: The base path of message catalog
+        :param catalog: The name of the catalog
+        :param locale_dir: The base path of the message catalog
 
         For more details, see :func:`sphinx.locale.get_translation()`.
 
@@ -1224,7 +1236,7 @@ class Sphinx:
 
     # ---- other methods -------------------------------------------------
     def is_parallel_allowed(self, typ: str) -> bool:
-        """Check parallel processing is allowed or not.
+        """Check whether parallel processing is allowed or not.
 
         :param typ: A type of processing; ``'read'`` or ``'write'``.
         """
@@ -1257,6 +1269,18 @@ class Sphinx:
                 return False
 
         return True
+
+    def set_html_assets_policy(self, policy):
+        """Set the policy to include assets in HTML pages.
+
+        - always: include the assets in all the pages
+        - per_page: include the assets only in pages where they are used
+
+        .. versionadded: 4.1
+        """
+        if policy not in ('always', 'per_page'):
+            raise ValueError('policy %s is not supported' % policy)
+        self.registry.html_assets_policy = policy
 
     @property
     def html_themes(self) -> Dict[str, str]:

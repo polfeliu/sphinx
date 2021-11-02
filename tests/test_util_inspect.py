@@ -10,6 +10,7 @@
 
 import ast
 import datetime
+import enum
 import functools
 import sys
 import types
@@ -214,11 +215,8 @@ def test_signature_annotations():
 
     # optional union
     sig = inspect.signature(f20)
-    if sys.version_info < (3, 7):
-        assert stringify_signature(sig) in ('() -> Optional[Union[int, str]]',
-                                            '() -> Optional[Union[str, int]]')
-    else:
-        assert stringify_signature(sig) == '() -> Optional[Union[int, str]]'
+    assert stringify_signature(sig) in ('() -> Optional[Union[int, str]]',
+                                        '() -> Optional[Union[str, int]]')
 
     # Any
     sig = inspect.signature(f14)
@@ -516,6 +514,14 @@ def test_dict_customtype():
     assert "<CustomType(2)>: 2" in description
 
 
+def test_object_description_enum():
+    class MyEnum(enum.Enum):
+        FOO = 1
+        BAR = 2
+
+    assert inspect.object_description(MyEnum.FOO) == "MyEnum.FOO"
+
+
 def test_getslots():
     class Foo:
         pass
@@ -671,10 +677,32 @@ def test_unpartial():
     assert inspect.unpartial(func3) is func1
 
 
+def test_getdoc_inherited_classmethod():
+    class Foo:
+        @classmethod
+        def meth(self):
+            """
+            docstring
+                indented text
+            """
+
+    class Bar(Foo):
+        @classmethod
+        def meth(self):
+            # inherited classmethod
+            pass
+
+    assert inspect.getdoc(Bar.meth, getattr, False, Bar, "meth") is None
+    assert inspect.getdoc(Bar.meth, getattr, True, Bar, "meth") == Foo.meth.__doc__
+
+
 def test_getdoc_inherited_decorated_method():
     class Foo:
         def meth(self):
-            """docstring."""
+            """
+            docstring
+                indented text
+            """
 
     class Bar(Foo):
         @functools.lru_cache()
@@ -683,7 +711,7 @@ def test_getdoc_inherited_decorated_method():
             pass
 
     assert inspect.getdoc(Bar.meth, getattr, False, Bar, "meth") is None
-    assert inspect.getdoc(Bar.meth, getattr, True, Bar, "meth") == "docstring."
+    assert inspect.getdoc(Bar.meth, getattr, True, Bar, "meth") == Foo.meth.__doc__
 
 
 def test_is_builtin_class_method():

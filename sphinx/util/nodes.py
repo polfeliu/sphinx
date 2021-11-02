@@ -40,8 +40,8 @@ caption_ref_re = explicit_title_re  # b/w compat alias
 class NodeMatcher:
     """A helper class for Node.traverse().
 
-    It checks that given node is an instance of specified node-classes and it has
-    specified node-attributes.
+    It checks that the given node is an instance of the specified node-classes and
+    has the specified node-attributes.
 
     For example, following example searches ``reference`` node having ``refdomain``
     and ``reftype`` attributes::
@@ -91,7 +91,7 @@ class NodeMatcher:
 
 def get_full_module_name(node: Node) -> str:
     """
-    return full module dotted path like: 'docutils.nodes.paragraph'
+    Return full module dotted path like: 'docutils.nodes.paragraph'
 
     :param nodes.Node node: target node
     :return: full module dotted path
@@ -343,7 +343,7 @@ def clean_astext(node: Element) -> str:
     node = node.deepcopy()
     for img in node.traverse(nodes.image):
         img['alt'] = ''
-    for raw in node.traverse(nodes.raw):
+    for raw in list(node.traverse(nodes.raw)):
         raw.parent.remove(raw)
     return node.astext()
 
@@ -408,7 +408,7 @@ def inline_all_toctrees(builder: "Builder", docnameset: Set[str], docname: str,
     Record all docnames in *docnameset*, and output docnames with *colorfunc*.
     """
     tree = cast(nodes.document, tree.deepcopy())
-    for toctreenode in tree.traverse(addnodes.toctree):
+    for toctreenode in list(tree.traverse(addnodes.toctree)):
         newnodes = []
         includefiles = map(str, toctreenode['includefiles'])
         for includefile in includefiles:
@@ -588,19 +588,21 @@ NON_SMARTQUOTABLE_PARENT_NODES = (
 
 
 def is_smartquotable(node: Node) -> bool:
-    """Check the node is smart-quotable or not."""
-    if isinstance(node.parent, NON_SMARTQUOTABLE_PARENT_NODES):
+    """Check whether the node is smart-quotable or not."""
+    for pnode in traverse_parent(node.parent):
+        if isinstance(pnode, NON_SMARTQUOTABLE_PARENT_NODES):
+            return False
+        elif pnode.get('support_smartquotes', None) is False:
+            return False
+
+    if getattr(node, 'support_smartquotes', None) is False:
         return False
-    elif node.parent.get('support_smartquotes', None) is False:
-        return False
-    elif getattr(node, 'support_smartquotes', None) is False:
-        return False
-    else:
-        return True
+
+    return True
 
 
 def process_only_nodes(document: Node, tags: "Tags") -> None:
-    """Filter ``only`` nodes which does not match *tags*."""
+    """Filter ``only`` nodes which do not match *tags*."""
     for node in document.traverse(addnodes.only):
         try:
             ret = tags.eval_condition(node['expr'])

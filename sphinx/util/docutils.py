@@ -339,6 +339,10 @@ class SphinxDirective(Directive):
         """Set source and line number to the node."""
         node.source, node.line = self.get_source_info()
 
+    def get_location(self) -> str:
+        """Get current location info for logging."""
+        return ':'.join(str(s) for s in self.get_source_info())
+
 
 class SphinxRole:
     """A base class for Sphinx roles.
@@ -401,11 +405,15 @@ class SphinxRole:
     def set_source_info(self, node: Node, lineno: int = None) -> None:
         node.source, node.line = self.get_source_info(lineno)
 
+    def get_location(self) -> str:
+        """Get current location info for logging."""
+        return ':'.join(str(s) for s in self.get_source_info())
+
 
 class ReferenceRole(SphinxRole):
     """A base class for reference roles.
 
-    The reference roles can accpet ``link title <target>`` style as a text for
+    The reference roles can accept ``link title <target>`` style as a text for
     the role.  The parsed result; link title and target will be stored to
     ``self.title`` and ``self.target``.
     """
@@ -506,7 +514,7 @@ def new_document(source_path: str, settings: Any = None) -> nodes.document:
         __document_cache__ = docutils.utils.new_document(source_path)
 
     if settings is None:
-        # Make a copy of ``settings`` from cache to accelerate instansiation
+        # Make a copy of ``settings`` from cache to accelerate instantiation
         settings = copy(__document_cache__.settings)
 
     # Create a new instance of nodes.document using cached reporter

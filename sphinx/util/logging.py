@@ -171,6 +171,11 @@ class MemoryHandler(logging.handlers.BufferingHandler):
     def shouldFlush(self, record: logging.LogRecord) -> bool:
         return False  # never flush
 
+    def flush(self) -> None:
+        # suppress any flushes triggered by importing packages that flush
+        # all handlers at initialization time
+        pass
+
     def flushTo(self, logger: logging.Logger) -> None:
         self.acquire()
         try:
@@ -187,7 +192,7 @@ class MemoryHandler(logging.handlers.BufferingHandler):
 
 @contextmanager
 def pending_warnings() -> Generator[logging.Handler, None, None]:
-    """Contextmanager to pend logging warnings temporary.
+    """Context manager to postpone logging warnings temporarily.
 
     Similar to :func:`pending_logging`.
     """
@@ -215,7 +220,7 @@ def pending_warnings() -> Generator[logging.Handler, None, None]:
 
 @contextmanager
 def suppress_logging() -> Generator[MemoryHandler, None, None]:
-    """Contextmanager to suppress logging all logs temporary.
+    """Context manager to suppress logging all logs temporarily.
 
     For example::
 
@@ -244,7 +249,7 @@ def suppress_logging() -> Generator[MemoryHandler, None, None]:
 
 @contextmanager
 def pending_logging() -> Generator[MemoryHandler, None, None]:
-    """Contextmanager to pend logging all logs temporary.
+    """Context manager to postpone logging all logs temporarily.
 
     For example::
 
@@ -264,7 +269,7 @@ def pending_logging() -> Generator[MemoryHandler, None, None]:
 
 @contextmanager
 def skip_warningiserror(skip: bool = True) -> Generator[None, None, None]:
-    """contextmanager to skip WarningIsErrorFilter for a while."""
+    """Context manager to skip WarningIsErrorFilter temporarily."""
     logger = logging.getLogger(NAMESPACE)
 
     if skip is False:
@@ -284,7 +289,7 @@ def skip_warningiserror(skip: bool = True) -> Generator[None, None, None]:
 
 @contextmanager
 def prefixed_warnings(prefix: str) -> Generator[None, None, None]:
-    """Prepend prefix to all records for a while.
+    """Context manager to prepend prefix to all warning log records temporarily.
 
     For example::
 
@@ -351,7 +356,7 @@ class InfoFilter(logging.Filter):
 
 
 def is_suppressed_warning(type: str, subtype: str, suppress_warnings: List[str]) -> bool:
-    """Check the warning is suppressed or not."""
+    """Check whether the warning is suppressed or not."""
     if type is None:
         return False
 
@@ -364,8 +369,10 @@ def is_suppressed_warning(type: str, subtype: str, suppress_warnings: List[str])
             target, subtarget = warning_type, None
 
         if target == type:
-            if (subtype is None or subtarget is None or
-               subtarget == subtype or subtarget == '*'):
+            if ((subtype is None and subtarget is None) or
+                    subtarget is None or
+                    subtarget == subtype or
+                    subtarget == '*'):
                 return True
 
     return False
@@ -434,7 +441,7 @@ class DisableWarningIsErrorFilter(logging.Filter):
 
 
 class MessagePrefixFilter(logging.Filter):
-    """Prepend prefix to all records."""
+    """Prepend prefix to all log records."""
 
     def __init__(self, prefix: str) -> None:
         self.prefix = prefix
@@ -555,7 +562,7 @@ class SafeEncodingWriter:
 
 
 class LastMessagesWriter:
-    """Stream writer which memories last 10 messages to save trackback"""
+    """Stream writer storing last 10 messages in memory to save trackback"""
     def __init__(self, app: "Sphinx", stream: IO) -> None:
         self.app = app
 
@@ -573,13 +580,13 @@ def setup(app: "Sphinx", status: IO, warning: IO) -> None:
     for handler in logger.handlers[:]:
         logger.removeHandler(handler)
 
-    info_handler = NewLineStreamHandler(SafeEncodingWriter(status))  # type: ignore
+    info_handler = NewLineStreamHandler(SafeEncodingWriter(status))
     info_handler.addFilter(InfoFilter())
     info_handler.addFilter(InfoLogRecordTranslator(app))
     info_handler.setLevel(VERBOSITY_MAP[app.verbosity])
     info_handler.setFormatter(ColorizeFormatter())
 
-    warning_handler = WarningStreamHandler(SafeEncodingWriter(warning))  # type: ignore
+    warning_handler = WarningStreamHandler(SafeEncodingWriter(warning))
     warning_handler.addFilter(WarningSuppressor(app))
     warning_handler.addFilter(WarningLogRecordTranslator(app))
     warning_handler.addFilter(WarningIsErrorFilter(app))
@@ -587,7 +594,7 @@ def setup(app: "Sphinx", status: IO, warning: IO) -> None:
     warning_handler.setLevel(logging.WARNING)
     warning_handler.setFormatter(ColorizeFormatter())
 
-    messagelog_handler = logging.StreamHandler(LastMessagesWriter(app, status))  # type: ignore
+    messagelog_handler = logging.StreamHandler(LastMessagesWriter(app, status))
     messagelog_handler.addFilter(InfoFilter())
     messagelog_handler.setLevel(VERBOSITY_MAP[app.verbosity])
     messagelog_handler.setFormatter(ColorizeFormatter())

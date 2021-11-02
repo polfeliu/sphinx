@@ -9,10 +9,10 @@
 """
 
 import re
-from typing import Any, Dict, List, Optional, Tuple, Type, cast
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Type, cast
 
 from docutils import nodes
-from docutils.nodes import Element
+from docutils.nodes import Element, Node
 
 from sphinx import addnodes
 from sphinx.addnodes import pending_xref
@@ -27,16 +27,12 @@ from sphinx.util.nodes import find_pending_xref_condition, process_only_nodes
 
 logger = logging.getLogger(__name__)
 
-if False:
-    # For type annotation
-    from docutils.nodes import Node
-
 
 class SphinxPostTransform(SphinxTransform):
     """A base class of post-transforms.
 
     Post transforms are invoked to modify the document to restructure it for outputting.
-    They do resolving references, convert images, special transformation for each output
+    They resolve references, convert images, do special transformation for each output
     formats and so on.  This class helps to implement these post transforms.
     """
     builders: Tuple[str, ...] = ()
@@ -56,7 +52,7 @@ class SphinxPostTransform(SphinxTransform):
         return True
 
     def run(self, **kwargs: Any) -> None:
-        """main method of post transforms.
+        """Main method of post transforms.
 
         Subclasses should override this method instead of ``apply()``.
         """
@@ -72,12 +68,18 @@ class ReferencesResolver(SphinxPostTransform):
 
     def run(self, **kwargs: Any) -> None:
         for node in self.document.traverse(addnodes.pending_xref):
-            contnode = cast(nodes.TextElement, node[0].deepcopy())
+            content = self.find_pending_xref_condition(node, ("resolved", "*"))
+            if content:
+                contnode = cast(Element, content[0].deepcopy())
+            else:
+                contnode = cast(Element, node[0].deepcopy())
+
             newnode = None
 
             typ = node['reftype']
             target = node['reftarget']
-            refdoc = node.get('refdoc', self.env.docname)
+            node.setdefault('refdoc', self.env.docname)
+            refdoc = node.get('refdoc')
             domain = None
 
             try:
@@ -109,9 +111,9 @@ class ReferencesResolver(SphinxPostTransform):
             else:
                 newnodes = [contnode]
                 if newnode is None and isinstance(node[0], addnodes.pending_xref_condition):
-                    matched = find_pending_xref_condition(node, "*")
+                    matched = self.find_pending_xref_condition(node, ("*",))
                     if matched:
-                        newnodes = matched.children
+                        newnodes = matched
                     else:
                         logger.warning(__('Could not determine the fallback text for the '
                                           'cross-reference. Might be a bug.'), location=node)
@@ -207,6 +209,15 @@ class ReferencesResolver(SphinxPostTransform):
             msg = __('%r reference target not found: %s') % (typ, target)
         logger.warning(msg, location=node, type='ref', subtype=typ)
 
+    def find_pending_xref_condition(self, node: pending_xref, conditions: Sequence[str]
+                                    ) -> Optional[List[Node]]:
+        for condition in conditions:
+            matched = find_pending_xref_condition(node, condition)
+            if matched:
+                return matched.children
+        else:
+            return None
+
 
 class OnlyNodeTransform(SphinxPostTransform):
     default_priority = 50
@@ -220,7 +231,7 @@ class OnlyNodeTransform(SphinxPostTransform):
 
 
 class SigElementFallbackTransform(SphinxPostTransform):
-    """Fallback various desc_* nodes to inline if translator does not supported them."""
+    """Fallback various desc_* nodes to inline if translator does not support them."""
     default_priority = 200
 
     def run(self, **kwargs: Any) -> None:
@@ -253,7 +264,8 @@ class PropagateDescDomain(SphinxPostTransform):
 
     def run(self, **kwargs: Any) -> None:
         for node in self.document.traverse(addnodes.desc_signature):
-            node['classes'].append(node.parent['domain'])
+            if node.parent.get('domain'):
+                node['classes'].append(node.parent['domain'])
 
 
 def setup(app: Sphinx) -> Dict[str, Any]:
